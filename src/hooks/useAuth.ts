@@ -37,7 +37,23 @@ export const useAuth = () => {
     try {
       const {
         data: { session },
+        error,
       } = await supabase.auth.getSession();
+
+      // 🔧 Si hay error de refresh token, limpiar sesión local
+      if (error) {
+        console.warn('⚠️ Error al obtener sesión:', error.message);
+
+        // Si es un error de refresh token, limpiar todo
+        if (error.message.includes('refresh') || error.message.includes('token')) {
+          console.log('🧹 Limpiando sesión corrupta...');
+          await supabase.auth.signOut();
+          setSession(null);
+          setUser(null);
+          return;
+        }
+      }
+
       setSession(session);
       setUser(
         session?.user
@@ -50,6 +66,10 @@ export const useAuth = () => {
       );
     } catch (error) {
       console.error('❌ Error al verificar sesión:', error);
+      // En caso de cualquier error, limpiar sesión por seguridad
+      await supabase.auth.signOut();
+      setSession(null);
+      setUser(null);
     } finally {
       setLoading(false);
     }

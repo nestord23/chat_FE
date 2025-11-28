@@ -1,11 +1,45 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useRegister } from '../../hooks/useRegister';
 
 const Register = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const navigate = useNavigate();
+
+  // Estados del formulario
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  // Hook personalizado para registro
+  const { register, loading, error, validationErrors } = useRegister();
+
+  // Función para manejar el submit
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!acceptTerms) {
+      alert('Debes aceptar los términos y condiciones');
+      return;
+    }
+
+    const result = await register({ email, username, password });
+
+    if (result.success) {
+      setShowSuccess(true);
+      // Redirigir después de 2 segundos
+      setTimeout(() => {
+        navigate('/login'); // Cambia esto a tu ruta de dashboard
+      }, 2000);
+    }
+  };
+
+  // Función para obtener errores de un campo específico
+  const getFieldError = (field: string) => {
+    return validationErrors.find((err) => err.field === field)?.message;
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -166,8 +200,56 @@ const Register = () => {
             </div>
           </div>
 
+          {/* Success Message */}
+          {showSuccess && (
+            <div
+              style={{
+                marginTop: '1rem',
+                padding: '1rem',
+                borderRadius: '0.5rem',
+                backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                border: '1px solid #22c55e',
+                textAlign: 'center',
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: 'Orbitron, sans-serif',
+                  color: '#4ade80',
+                  fontSize: '0.875rem',
+                }}
+              >
+                ✅ Usuario registrado exitosamente. Redirigiendo...
+              </p>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && !showSuccess && (
+            <div
+              style={{
+                marginTop: '1rem',
+                padding: '1rem',
+                borderRadius: '0.5rem',
+                backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                border: '1px solid #ef4444',
+                textAlign: 'center',
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: 'Orbitron, sans-serif',
+                  color: '#f87171',
+                  fontSize: '0.875rem',
+                }}
+              >
+                ❌ {error}
+              </p>
+            </div>
+          )}
+
           {/* Form */}
-          <div style={{ marginTop: '2rem' }}>
+          <form onSubmit={handleSubmit} style={{ marginTop: '2rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {/* Email Input */}
               <div>
@@ -192,29 +274,38 @@ const Register = () => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading}
                   style={{
                     fontFamily: 'Orbitron, sans-serif',
                     width: '95%',
                     padding: '0.75rem 1rem',
                     borderRadius: '0.5rem',
-                    border: '1px solid rgba(0, 255, 0, 0.5)',
+                    border: `1px solid ${getFieldError('email') ? '#ef4444' : 'rgba(0, 255, 0, 0.5)'}`,
                     backgroundColor: 'rgba(0, 0, 0, 0.6)',
                     color: '#4ade80',
                     fontSize: '1rem',
                     outline: 'none',
                     boxShadow: '0 0 10px rgba(0, 255, 0, 0.1)',
                     transition: 'all 0.3s',
+                    opacity: loading ? 0.5 : 1,
                   }}
                   onFocus={(e) => {
                     e.target.style.borderColor = '#4ade80';
                     e.target.style.boxShadow = '0 0 20px rgba(0, 255, 0, 0.4)';
                   }}
                   onBlur={(e) => {
-                    e.target.style.borderColor = 'rgba(0, 255, 0, 0.5)';
+                    e.target.style.borderColor = getFieldError('email')
+                      ? '#ef4444'
+                      : 'rgba(0, 255, 0, 0.5)';
                     e.target.style.boxShadow = '0 0 10px rgba(0, 255, 0, 0.1)';
                   }}
                   placeholder="user@terminal.sys"
                 />
+                {getFieldError('email') && (
+                  <p style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                    {getFieldError('email')}
+                  </p>
+                )}
               </div>
 
               {/* Username Input */}
@@ -240,29 +331,38 @@ const Register = () => {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
+                  disabled={loading}
                   style={{
                     fontFamily: 'Orbitron, sans-serif',
                     width: '95%',
                     padding: '0.75rem 1rem',
                     borderRadius: '0.5rem',
-                    border: '1px solid rgba(0, 255, 0, 0.5)',
+                    border: `1px solid ${getFieldError('username') ? '#ef4444' : 'rgba(0, 255, 0, 0.5)'}`,
                     backgroundColor: 'rgba(0, 0, 0, 0.6)',
                     color: '#4ade80',
                     fontSize: '1rem',
                     outline: 'none',
                     boxShadow: '0 0 10px rgba(0, 255, 0, 0.1)',
                     transition: 'all 0.3s',
+                    opacity: loading ? 0.5 : 1,
                   }}
                   onFocus={(e) => {
                     e.target.style.borderColor = '#4ade80';
                     e.target.style.boxShadow = '0 0 20px rgba(0, 255, 0, 0.4)';
                   }}
                   onBlur={(e) => {
-                    e.target.style.borderColor = 'rgba(0, 255, 0, 0.5)';
+                    e.target.style.borderColor = getFieldError('username')
+                      ? '#ef4444'
+                      : 'rgba(0, 255, 0, 0.5)';
                     e.target.style.boxShadow = '0 0 10px rgba(0, 255, 0, 0.1)';
                   }}
                   placeholder="neo_user"
                 />
+                {getFieldError('username') && (
+                  <p style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                    {getFieldError('username')}
+                  </p>
+                )}
               </div>
 
               {/* Password Input */}
@@ -288,31 +388,41 @@ const Register = () => {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading}
                   style={{
                     fontFamily: 'Orbitron, sans-serif',
                     width: '95%',
                     padding: '0.75rem 1rem',
                     borderRadius: '0.5rem',
-                    border: '1px solid rgba(0, 255, 0, 0.5)',
+                    border: `1px solid ${getFieldError('password') ? '#ef4444' : 'rgba(0, 255, 0, 0.5)'}`,
                     backgroundColor: 'rgba(0, 0, 0, 0.6)',
                     color: '#4ade80',
                     fontSize: '1rem',
                     outline: 'none',
                     boxShadow: '0 0 10px rgba(0, 255, 0, 0.1)',
                     transition: 'all 0.3s',
+                    opacity: loading ? 0.5 : 1,
                   }}
                   onFocus={(e) => {
                     e.target.style.borderColor = '#4ade80';
                     e.target.style.boxShadow = '0 0 20px rgba(0, 255, 0, 0.4)';
                   }}
                   onBlur={(e) => {
-                    e.target.style.borderColor = 'rgba(0, 255, 0, 0.5)';
+                    e.target.style.borderColor = getFieldError('password')
+                      ? '#ef4444'
+                      : 'rgba(0, 255, 0, 0.5)';
                     e.target.style.boxShadow = '0 0 10px rgba(0, 255, 0, 0.1)';
                   }}
                   placeholder="••••••••"
                 />
+                {getFieldError('password') && (
+                  <p style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+                    {getFieldError('password')}
+                  </p>
+                )}
               </div>
             </div>
+
             {/* Terms and Conditions */}
             <div
               style={{
@@ -326,12 +436,16 @@ const Register = () => {
                 id="terms"
                 name="terms"
                 type="checkbox"
+                checked={acceptTerms}
+                onChange={(e) => setAcceptTerms(e.target.checked)}
+                disabled={loading}
                 style={{
                   height: '1rem',
                   width: '1rem',
                   marginRight: '0.5rem',
                   backgroundColor: 'transparent',
                   accentColor: '#4ade80',
+                  opacity: loading ? 0.5 : 1,
                 }}
               />
               <label
@@ -344,51 +458,62 @@ const Register = () => {
 
             {/* Submit Button */}
             <button
+              type="submit"
+              disabled={loading}
               style={{
                 width: '100%',
                 marginTop: '1.5rem',
                 padding: '0.75rem 1rem',
                 borderRadius: '0.5rem',
                 border: '1px solid #22c55e',
-                backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                backgroundColor: loading ? 'rgba(0, 255, 0, 0.05)' : 'rgba(0, 255, 0, 0.1)',
                 color: '#4ade80',
                 fontWeight: 'bold',
                 fontSize: '1rem',
-                cursor: 'pointer',
+                cursor: loading ? 'not-allowed' : 'pointer',
                 boxShadow: '0 0 20px rgba(0, 255, 0, 0.3)',
                 transition: 'all 0.3s',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '0.5rem',
+                opacity: loading ? 0.5 : 1,
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(0, 255, 0, 0.2)';
-                e.currentTarget.style.color = '#86efac';
-                e.currentTarget.style.boxShadow = '0 0 40px rgba(0, 255, 0, 0.6)';
+                if (!loading) {
+                  e.currentTarget.style.backgroundColor = 'rgba(0, 255, 0, 0.2)';
+                  e.currentTarget.style.color = '#86efac';
+                  e.currentTarget.style.boxShadow = '0 0 40px rgba(0, 255, 0, 0.6)';
+                }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'rgba(0, 255, 0, 0.1)';
-                e.currentTarget.style.color = '#4ade80';
-                e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 255, 0, 0.3)';
+                if (!loading) {
+                  e.currentTarget.style.backgroundColor = 'rgba(0, 255, 0, 0.1)';
+                  e.currentTarget.style.color = '#4ade80';
+                  e.currentTarget.style.boxShadow = '0 0 20px rgba(0, 255, 0, 0.3)';
+                }
               }}
             >
-              <span style={{ fontFamily: 'Orbitron, sans-serif' }}>CREAR CUENTA</span>
-              <svg
-                style={{ height: '1.25rem', width: '1.25rem' }}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
-                />
-              </svg>
+              <span style={{ fontFamily: 'Orbitron, sans-serif' }}>
+                {loading ? 'PROCESANDO...' : 'CREAR CUENTA'}
+              </span>
+              {!loading && (
+                <svg
+                  style={{ height: '1.25rem', width: '1.25rem' }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"
+                  />
+                </svg>
+              )}
             </button>
-          </div>
+          </form>
 
           {/* Footer */}
           <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
@@ -467,7 +592,7 @@ const Register = () => {
         }}
       >
         <p>&gt; NEW_USER_REGISTRATION</p>
-        <p>&gt; STATUS: ACTIVE</p>
+        <p>&gt; STATUS: {loading ? 'PROCESSING' : 'ACTIVE'}</p>
       </div>
       <div
         style={{
