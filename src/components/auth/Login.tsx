@@ -165,7 +165,7 @@ const Login = () => {
           <div style={{ textAlign: 'center' }}>
             <h2
               style={{
-                marginTop: '0.5rem',
+                marginTop: '1rem',
                 fontSize: '2rem',
                 fontFamily: 'Orbitron, sans-serif',
                 fontWeight: 'bold',
@@ -174,8 +174,19 @@ const Login = () => {
                 letterSpacing: '0.05em',
               }}
             >
-              CHAT
+              HACK CHAT
             </h2>
+            <p
+              style={{
+                marginTop: '0.5rem',
+                fontSize: '0.875rem',
+                fontFamily: 'Orbitron, sans-serif',
+                color: 'rgba(0, 255, 0, 0.7)',
+                letterSpacing: '0.1em',
+              }}
+            >
+              › LOGIN
+            </p>
             <div
               style={{
                 marginTop: '1rem',
