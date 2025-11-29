@@ -1,114 +1,622 @@
-import { useState } from 'react';
-import { X, UserPlus, Search } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { X, UserPlus, Terminal, Search, Loader2 } from 'lucide-react';
 
 interface ChatPopupProps {
   isOpen: boolean;
   onClose: () => void;
-  onStartChat?: (username: string) => void;
+  onStartChat?: (userId: string, username: string) => void;
+}
+
+interface User {
+  id: string;
+  username: string;
+  email: string;
+  avatar_url?: string;
+}
+
+interface SearchResult {
+  success: boolean;
+  data: User[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  cached?: boolean;
 }
 
 export default function ChatPopup({ isOpen, onClose, onStartChat }: ChatPopupProps) {
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
-  const handleSubmit = () => {
-    if (!username.trim()) return;
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const debounceTimerRef = useRef<number | null>(null);
 
-    setLoading(true);
-    // Simular búsqueda de usuario
-    setTimeout(() => {
-      if (onStartChat) {
-        onStartChat(username);
+  // Función de debounce
+  const debounce = (func: Function, delay: number) => {
+    return (...args: any[]) => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
       }
-      setUsername('');
-      setLoading(false);
-      onClose();
-    }, 1000);
+      debounceTimerRef.current = setTimeout(() => func(...args), delay);
+    };
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleSubmit();
+  // Función para buscar usuarios en el backend
+  const searchUsers = async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      setError(null);
+      return;
+    }
+
+    // Validación del lado del cliente
+    if (query.length > 50) {
+      setError('Máximo 50 caracteres');
+      return;
+    }
+
+    const allowedPattern = /^[a-zA-Z0-9\s\-_áéíóúÁÉÍÓÚñÑüÜ]+$/;
+    if (!allowedPattern.test(query)) {
+      setError('Caracteres no permitidos');
+      return;
+    }
+
+    // Cancelar búsqueda anterior
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Crear nuevo AbortController
+    abortControllerRef.current = new AbortController();
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log('🔍 Buscando usuario:', query);
+
+      const response = await fetch(
+        `http://localhost:3001/api/users/search?q=${encodeURIComponent(query)}&page=1&limit=10`,
+        {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          signal: abortControllerRef.current.signal,
+        }
+      );
+
+      console.log('📡 Respuesta del servidor:', response.status, response.statusText);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('❌ Error del servidor:', errorData);
+
+        switch (response.status) {
+          case 400:
+            throw new Error(errorData.message || 'Búsqueda inválida');
+          case 401:
+            throw new Error('Debes iniciar sesión');
+          case 429:
+            throw new Error('Demasiadas búsquedas. Espera un momento.');
+          case 500:
+            throw new Error('Error del servidor');
+          default:
+            throw new Error('Error desconocido');
+        }
+      }
+
+      const data: SearchResult = await response.json();
+      console.log('✅ Datos recibidos:', data);
+
+      if (data.success) {
+        console.log('👥 Usuarios encontrados:', data.data.length);
+        setSearchResults(data.data);
+        if (data.cached) {
+          console.log('💾 Resultado del caché del backend');
+        }
+      } else {
+        throw new Error('Error en la búsqueda');
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.log('⏹️ Búsqueda cancelada');
+        return;
+      }
+      console.error('❌ Error en la búsqueda:', err);
+      setError(err.message || 'Error al buscar usuarios');
+      setSearchResults([]);
+    } finally {
+      setLoading(false);
     }
   };
 
-  return (
-    <>
-      {/* Overlay y Popup */}
-      {isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md transform transition-all">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <div className="flex items-center gap-3">
-                <div className="bg-indigo-100 p-2 rounded-lg">
-                  <UserPlus className="text-indigo-600" size={24} />
-                </div>
-                <h2 className="text-xl font-semibold text-gray-800">Nuevo Chat</h2>
-              </div>
-              <button
-                onClick={() => onClose()}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X size={24} />
-              </button>
-            </div>
+  // Búsqueda con debouncing
+  const debouncedSearch = useCallback(
+    debounce((query: string) => searchUsers(query), 500),
+    []
+  );
 
-            {/* Body */}
+  // Manejar cambio en el input
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setUsername(value);
+    debouncedSearch(value);
+  };
+
+  // Manejar selección de usuario
+  const handleSelectUser = (user: User) => {
+    setSelectedUser(user);
+    setUsername(user.username);
+    setSearchResults([]);
+  };
+
+  // Iniciar chat con el usuario seleccionado
+  const handleSubmit = () => {
+    if (!selectedUser) {
+      setError('Selecciona un usuario de la lista');
+      return;
+    }
+
+    if (onStartChat) {
+      onStartChat(selectedUser.id, selectedUser.username);
+    }
+
+    // Reset
+    setUsername('');
+    setSelectedUser(null);
+    setSearchResults([]);
+    onClose();
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && selectedUser) {
+      handleSubmit();
+    }
+    if (e.key === 'Escape') {
+      onClose();
+    }
+  };
+
+  // Limpiar al cerrar
+  useEffect(() => {
+    if (!isOpen) {
+      setUsername('');
+      setSearchResults([]);
+      setError(null);
+      setSelectedUser(null);
+      setLoading(false);
+    }
+  }, [isOpen]);
+
+  // Prevenir scroll del body
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
+  // Limpiar timers al desmontar
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  if (!isOpen) return null;
+
+  const popupContent = (
+    <div
+      className="fixed inset-0 flex items-center justify-center p-4 z-[9999]"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 9999,
+      }}
+    >
+      {/* Overlay */}
+      <div
+        className="absolute inset-0 animate-in fade-in duration-300"
+        onClick={onClose}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: '#000000',
+          opacity: 0.97,
+          backgroundImage: `
+            linear-gradient(rgba(0, 255, 0, 0.03) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0, 255, 0, 0.03) 1px, transparent 1px)
+          `,
+          backgroundSize: '50px 50px',
+        }}
+      />
+
+      {/* Popup Container */}
+      <div
+        className="relative w-full max-w-lg transform transition-all animate-in zoom-in-95 duration-300"
+        style={{
+          position: 'relative',
+          zIndex: 10000,
+          maxWidth: '32rem',
+        }}
+      >
+        {/* Glow Effect */}
+        <div
+          className="absolute -inset-1 rounded-xl opacity-75 blur-xl animate-pulse"
+          style={{
+            background: 'linear-gradient(45deg, #22c55e, #4ade80, #22c55e)',
+          }}
+        />
+
+        {/* Main Popup */}
+        <div
+          className="relative rounded-xl overflow-hidden"
+          style={{
+            backgroundColor: '#000000',
+            border: '2px solid rgba(34, 197, 94, 0.5)',
+            boxShadow: '0 0 40px rgba(34, 197, 94, 0.3)',
+          }}
+        >
+          {/* Header Section */}
+          <div
+            className="relative border-b"
+            style={{
+              background:
+                'linear-gradient(180deg, rgba(0, 26, 0, 0.8) 0%, rgba(0, 0, 0, 0.9) 100%)',
+              borderColor: 'rgba(34, 197, 94, 0.3)',
+            }}
+          >
             <div className="p-6">
-              <div className="mb-6">
-                <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
-                  Username
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-4">
+                  <div
+                    className="relative p-3 rounded-lg"
+                    style={{
+                      background:
+                        'linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(74, 222, 128, 0.1))',
+                      border: '1px solid rgba(34, 197, 94, 0.4)',
+                    }}
+                  >
+                    <Terminal className="text-green-400" size={24} />
+                  </div>
+                  <div>
+                    <h2
+                      className="text-2xl font-bold tracking-wider mb-1"
+                      style={{
+                        fontFamily: 'Orbitron, sans-serif',
+                        color: '#4ade80',
+                        textShadow: '0 0 20px rgba(74, 222, 128, 0.5)',
+                      }}
+                    >
+                      NUEVO CHAT
+                    </h2>
+                    <p
+                      className="text-xs tracking-wide"
+                      style={{
+                        color: 'rgba(74, 222, 128, 0.6)',
+                        fontFamily: 'Orbitron, sans-serif',
+                      }}
+                    >
+                      &gt; Buscar y conectar
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={onClose}
+                  className="p-2.5 rounded-lg transition-all duration-200"
+                  style={{
+                    color: '#4ade80',
+                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                  }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Body Section */}
+          <div className="p-8" style={{ backgroundColor: '#000000' }}>
+            {/* Search Section */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-1 h-5 rounded-full"
+                  style={{
+                    background: 'linear-gradient(180deg, #4ade80, #22c55e)',
+                    boxShadow: '0 0 10px rgba(74, 222, 128, 0.5)',
+                  }}
+                />
+                <label
+                  htmlFor="username"
+                  className="text-sm font-bold tracking-widest"
+                  style={{
+                    fontFamily: 'Orbitron, sans-serif',
+                    color: '#4ade80',
+                  }}
+                >
+                  BUSCAR USUARIO
                 </label>
+              </div>
+
+              {/* Input Container */}
+              <div className="relative group">
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Search className="text-gray-400" size={20} />
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <Search className="text-green-500/50" size={18} />
                   </div>
                   <input
                     type="text"
                     id="username"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    placeholder="Buscar por username..."
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all"
+                    onChange={handleInputChange}
+                    onKeyDown={handleKeyPress}
+                    placeholder="Escribe para buscar..."
+                    className="relative w-full pl-11 pr-12 py-4 rounded-lg outline-none transition-all duration-300 font-mono text-sm"
+                    style={{
+                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                      border: '2px solid rgba(34, 197, 94, 0.3)',
+                      color: '#4ade80',
+                      fontFamily: 'Orbitron, sans-serif',
+                    }}
                     autoFocus
                   />
+                  {loading && (
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                      <Loader2 className="text-green-400 animate-spin" size={20} />
+                    </div>
+                  )}
                 </div>
-                <p className="mt-2 text-sm text-gray-500">
-                  Ingresa el username de la persona con quien deseas chatear
-                </p>
               </div>
 
-              {/* Footer */}
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => onClose()}
-                  className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+              {/* Error Message */}
+              {error && (
+                <div
+                  className="p-3 rounded-lg text-sm"
+                  style={{
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#ef4444',
+                    fontFamily: 'Orbitron, sans-serif',
+                  }}
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={!username.trim() || loading}
-                  className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  {error}
+                </div>
+              )}
+
+              {/* Search Results */}
+              {searchResults.length > 0 && (
+                <div
+                  className="max-h-64 overflow-y-auto rounded-lg"
+                  style={{
+                    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                    border: '1px solid rgba(34, 197, 94, 0.2)',
+                  }}
                 >
-                  {loading ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Buscando...
-                    </>
-                  ) : (
-                    'Iniciar Chat'
-                  )}
-                </button>
+                  {searchResults.map((user) => (
+                    <div
+                      key={user.id}
+                      onClick={() => handleSelectUser(user)}
+                      className="p-3 cursor-pointer transition-all duration-200 flex items-center gap-3"
+                      style={{
+                        borderBottom: '1px solid rgba(34, 197, 94, 0.1)',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = 'rgba(34, 197, 94, 0.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <div
+                        className="w-10 h-10 rounded-full flex items-center justify-center"
+                        style={{
+                          backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                          border: '2px solid rgba(34, 197, 94, 0.5)',
+                          fontFamily: 'Orbitron, sans-serif',
+                          color: '#4ade80',
+                        }}
+                      >
+                        {user.username.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1">
+                        <p
+                          className="font-bold text-sm"
+                          style={{
+                            color: '#4ade80',
+                            fontFamily: 'Orbitron, sans-serif',
+                          }}
+                        >
+                          {user.username}
+                        </p>
+                        <p
+                          className="text-xs"
+                          style={{
+                            color: 'rgba(74, 222, 128, 0.6)',
+                            fontFamily: 'Orbitron, sans-serif',
+                          }}
+                        >
+                          {user.email}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Selected User */}
+              {selectedUser && (
+                <div
+                  className="p-4 rounded-lg flex items-center gap-3"
+                  style={{
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    border: '2px solid rgba(34, 197, 94, 0.4)',
+                  }}
+                >
+                  <div
+                    className="w-12 h-12 rounded-full flex items-center justify-center"
+                    style={{
+                      backgroundColor: 'rgba(34, 197, 94, 0.3)',
+                      border: '2px solid #4ade80',
+                      fontFamily: 'Orbitron, sans-serif',
+                      color: '#4ade80',
+                      fontSize: '18px',
+                    }}
+                  >
+                    {selectedUser.username.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1">
+                    <p
+                      className="font-bold"
+                      style={{
+                        color: '#4ade80',
+                        fontFamily: 'Orbitron, sans-serif',
+                      }}
+                    >
+                      {selectedUser.username}
+                    </p>
+                    <p
+                      className="text-sm"
+                      style={{
+                        color: 'rgba(74, 222, 128, 0.7)',
+                        fontFamily: 'Orbitron, sans-serif',
+                      }}
+                    >
+                      {selectedUser.email}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Info Box */}
+              <div
+                className="flex items-start gap-3 p-4 rounded-lg"
+                style={{
+                  background:
+                    'linear-gradient(135deg, rgba(34, 197, 94, 0.05), rgba(0, 0, 0, 0.3))',
+                  border: '1px solid rgba(34, 197, 94, 0.2)',
+                }}
+              >
+                <div className="text-green-500 mt-0.5">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+                <p
+                  className="text-xs leading-relaxed"
+                  style={{
+                    color: 'rgba(74, 222, 128, 0.7)',
+                    fontFamily: 'Orbitron, sans-serif',
+                  }}
+                >
+                  Escribe mínimo 2 caracteres para buscar. Selecciona un usuario de la lista.
+                </p>
               </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-4 mt-8">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-6 py-3.5 rounded-lg font-bold tracking-widest text-sm transition-all duration-200"
+                style={{
+                  fontFamily: 'Orbitron, sans-serif',
+                  border: '2px solid rgba(34, 197, 94, 0.3)',
+                  color: '#4ade80',
+                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                }}
+              >
+                CANCELAR
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!selectedUser || loading}
+                className="flex-1 px-6 py-3.5 rounded-lg font-bold tracking-widest text-sm transition-all duration-200 flex items-center justify-center gap-2"
+                style={{
+                  fontFamily: 'Orbitron, sans-serif',
+                  backgroundColor: selectedUser && !loading ? '#22c55e' : 'rgba(34, 197, 94, 0.2)',
+                  color: selectedUser && !loading ? '#000000' : 'rgba(74, 222, 128, 0.4)',
+                  border: '2px solid',
+                  borderColor: selectedUser && !loading ? '#4ade80' : 'rgba(34, 197, 94, 0.3)',
+                  boxShadow: selectedUser && !loading ? '0 0 30px rgba(34, 197, 94, 0.4)' : 'none',
+                  cursor: selectedUser && !loading ? 'pointer' : 'not-allowed',
+                }}
+              >
+                <UserPlus size={18} />
+                <span>INICIAR CHAT</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div
+            className="border-t px-6 py-4"
+            style={{
+              background:
+                'linear-gradient(180deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 26, 0, 0.4) 100%)',
+              borderColor: 'rgba(34, 197, 94, 0.2)',
+            }}
+          >
+            <div className="flex items-center justify-center gap-3">
+              <div
+                className="w-2 h-2 rounded-full animate-pulse"
+                style={{
+                  backgroundColor: '#22c55e',
+                  boxShadow: '0 0 10px #22c55e',
+                }}
+              />
+              <p
+                className="text-xs font-mono tracking-wider"
+                style={{
+                  color: 'rgba(74, 222, 128, 0.5)',
+                  fontFamily: 'Orbitron, sans-serif',
+                }}
+              >
+                BÚSQUEDA EN TIEMPO REAL • CONEXIÓN SEGURA
+              </p>
+              <div
+                className="w-2 h-2 rounded-full animate-pulse"
+                style={{
+                  backgroundColor: '#22c55e',
+                  boxShadow: '0 0 10px #22c55e',
+                }}
+              />
             </div>
           </div>
         </div>
-      )}
-    </>
+      </div>
+    </div>
   );
+
+  return createPortal(popupContent, document.body);
 }
