@@ -11,8 +11,15 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
 
   // ✅ Hook de autenticación
-  const { login } = useAuthContext();
+  const { login, user, loading: authLoading } = useAuthContext();
   const navigate = useNavigate();
+
+  // ✅ Redirigir si ya está autenticado
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate('/chat', { replace: true });
+    }
+  }, [user, authLoading, navigate]);
 
   // ✅ Manejar envío del formulario
   const handleSubmit = async (e: React.FormEvent) => {

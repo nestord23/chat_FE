@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useRegister } from '../../hooks/useRegister';
+import { useAuthContext } from '../../contexts/AuthContext';
 
 const Register = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -15,6 +16,16 @@ const Register = () => {
 
   // Hook personalizado para registro
   const { register, loading, error, validationErrors } = useRegister();
+
+  // Hook de autenticación para verificar si ya está logueado
+  const { user, loading: authLoading } = useAuthContext();
+
+  // ✅ Redirigir si ya está autenticado
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate('/chat', { replace: true });
+    }
+  }, [user, authLoading, navigate]);
 
   // Función para manejar el submit
   const handleSubmit = async (e: React.FormEvent) => {

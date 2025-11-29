@@ -12,20 +12,10 @@ export const useAuth = () => {
   useEffect(() => {
     checkSession();
 
-    // Escuchar cambios de autenticación
+    // Escuchar cambios de autenticación de Supabase (opcional, por si usas Supabase también)
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('🔐 Auth event:', event);
+      console.log('🔐 Supabase Auth event:', event);
       setSession(session);
-      setUser(
-        session?.user
-          ? {
-              id: session.user.id,
-              email: session.user.email!,
-              username: session.user.user_metadata?.username || session.user.email!.split('@')[0],
-            }
-          : null
-      );
-      setLoading(false);
     });
 
     return () => {
@@ -35,40 +25,20 @@ export const useAuth = () => {
 
   const checkSession = async () => {
     try {
-      const {
-        data: { session },
-        error,
-      } = await supabase.auth.getSession();
+      setLoading(true);
 
-      // 🔧 Si hay error de refresh token, limpiar sesión local
-      if (error) {
-        console.warn('⚠️ Error al obtener sesión:', error.message);
+      // ✅ Intentar obtener la sesión del backend
+      const response = await authService.getSession();
 
-        // Si es un error de refresh token, limpiar todo
-        if (error.message.includes('refresh') || error.message.includes('token')) {
-          console.log('🧹 Limpiando sesión corrupta...');
-          await supabase.auth.signOut();
-          setSession(null);
-          setUser(null);
-          return;
-        }
+      if (response.success && response.user) {
+        console.log('✅ Sesión activa encontrada:', response.user);
+        setUser(response.user);
+      } else {
+        console.log('⚠️ No hay sesión activa');
+        setUser(null);
       }
-
-      setSession(session);
-      setUser(
-        session?.user
-          ? {
-              id: session.user.id,
-              email: session.user.email!,
-              username: session.user.user_metadata?.username || session.user.email!.split('@')[0],
-            }
-          : null
-      );
-    } catch (error) {
-      console.error('❌ Error al verificar sesión:', error);
-      // En caso de cualquier error, limpiar sesión por seguridad
-      await supabase.auth.signOut();
-      setSession(null);
+    } catch (error: any) {
+      console.log('ℹ️ No hay sesión activa:', error.message);
       setUser(null);
     } finally {
       setLoading(false);
@@ -76,22 +46,71 @@ export const useAuth = () => {
   };
 
   const register = async (data: RegisterData) => {
-    const result = await authService.register(data);
-    await checkSession();
-    return result;
+    try {
+      const result = await authService.register(data);
+
+      if (result.success && result.user) {
+        console.log('✅ Registro exitoso:', result.user);
+        setUser(result.user);
+
+        // Si el backend también devuelve tokens de Supabase, los guardamos
+        if (result.session) {
+          await supabase.auth.setSession({
+            access_token: result.session.access_token,
+            refresh_token: result.session.refresh_token,
+          });
+        }
+      }
+
+      return result;
+    } catch (error: any) {
+      console.error('❌ Error en registro:', error);
+      throw error;
+    }
   };
 
   const login = async (data: LoginData) => {
-    const result = await authService.login(data);
-    await checkSession();
-    return result;
+    try {
+      console.log('🔐 Intentando login...');
+      const result = await authService.login(data);
+
+      if (result.success && result.user) {
+        console.log('✅ Login exitoso:', result.user);
+        setUser(result.user);
+
+        // Si el backend también devuelve tokens de Supabase, los guardamos
+        if (result.session) {
+          console.log('🔑 Guardando sesión de Supabase...');
+          await supabase.auth.setSession({
+            access_token: result.session.access_token,
+            refresh_token: result.session.refresh_token,
+          });
+        }
+      } else {
+        throw new Error(result.message || 'Error en el login');
+      }
+
+      return result;
+    } catch (error: any) {
+      console.error('❌ Error en login:', error);
+      setUser(null);
+      throw error;
+    }
   };
 
   const logout = async () => {
-    await authService.logout();
-    await supabase.auth.signOut();
-    setUser(null);
-    setSession(null);
+    try {
+      await authService.logout();
+      await supabase.auth.signOut();
+      setUser(null);
+      setSession(null);
+      console.log('✅ Logout exitoso');
+    } catch (error) {
+      console.error('❌ Error en logout:', error);
+      // Limpiar de todas formas
+      setUser(null);
+      setSession(null);
+    }
   };
 
   const getAccessToken = (): string | undefined => {
