@@ -1,61 +1,91 @@
 import { useState, useEffect } from 'react';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
+import { chatService } from '../../services/chatService';
+import { useAuthContext } from '../../contexts/AuthContext';
+import type { Message } from '../../types/chat.types';
 
 interface ChatWindowProps {
   selectedChat: string | null;
+  contactName?: string;
 }
 
-const ChatWindow = ({ selectedChat }: ChatWindowProps) => {
+const ChatWindow = ({ selectedChat, contactName = 'Usuario' }: ChatWindowProps) => {
+  const { user } = useAuthContext();
   const [messages, setMessages] = useState<any[]>([]);
 
-  // Mock data para demostración
+  // Cargar mensajes cuando se selecciona un chat
   useEffect(() => {
-    if (selectedChat) {
-      // Aquí cargarías los mensajes reales del backend
-      setMessages([
-        {
-          id: '1',
-          senderId: '1',
-          text: 'Follow the white rabbit...',
-          timestamp: new Date(Date.now() - 3600000).toISOString(),
-          isMine: false,
-        },
-        {
-          id: '2',
-          senderId: 'me',
-          text: 'What do you mean?',
-          timestamp: new Date(Date.now() - 3000000).toISOString(),
-          isMine: true,
-        },
-        {
-          id: '3',
-          senderId: '1',
-          text: 'The Matrix has you...',
-          timestamp: new Date(Date.now() - 2400000).toISOString(),
-          isMine: false,
-        },
-        {
-          id: '4',
-          senderId: 'me',
-          text: 'I need to know more',
-          timestamp: new Date(Date.now() - 1800000).toISOString(),
-          isMine: true,
-        },
-      ]);
-    }
-  }, [selectedChat]);
+    const loadMessages = async () => {
+      if (!selectedChat || !user) return;
 
-  const handleSendMessage = (text: string) => {
-    const newMessage = {
-      id: Date.now().toString(),
-      senderId: 'me',
+      try {
+        const { messages: fetchedMessages } = await chatService.getMessages(selectedChat);
+
+        // Convertir mensajes del backend al formato del componente
+        const formattedMessages = fetchedMessages.map((msg: Message) => ({
+          id: msg.id,
+          senderId: msg.user_id,
+          text: msg.content,
+          timestamp: msg.created_at,
+          isMine: msg.user_id === user.id,
+          status: msg.status,
+        }));
+
+        setMessages(formattedMessages);
+
+        // Marcar mensajes como vistos
+        await chatService.markMessagesAsSeen(selectedChat);
+      } catch (err: any) {
+        console.error('Error al cargar mensajes:', err);
+        setMessages([]);
+      }
+    };
+
+    loadMessages();
+  }, [selectedChat, user]);
+
+  const handleSendMessage = async (text: string) => {
+    if (!selectedChat || !user) return;
+
+    // Agregar mensaje optimísticamente
+    const tempMessage = {
+      id: `temp-${Date.now()}`,
+      senderId: user.id,
       text,
       timestamp: new Date().toISOString(),
       isMine: true,
+      status: 'enviado' as const,
     };
-    setMessages([...messages, newMessage]);
-    // Aquí enviarías el mensaje al backend
+
+    setMessages((prev) => [...prev, tempMessage]);
+
+    try {
+      // Enviar mensaje al backend
+      const sentMessage = await chatService.sendMessage(selectedChat, text);
+
+      // Actualizar con el mensaje real del backend
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === tempMessage.id
+            ? {
+                id: sentMessage.id,
+                senderId: sentMessage.user_id,
+                text: sentMessage.content,
+                timestamp: sentMessage.created_at,
+                isMine: true,
+                status: sentMessage.status,
+              }
+            : msg
+        )
+      );
+    } catch (err: any) {
+      console.error('Error al enviar mensaje:', err);
+      // Marcar el mensaje como error
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === tempMessage.id ? { ...msg, error: true } : msg))
+      );
+    }
   };
 
   if (!selectedChat) {
@@ -162,7 +192,7 @@ const ChatWindow = ({ selectedChat }: ChatWindowProps) => {
             fontSize: '1rem',
           }}
         >
-          N
+          {contactName.charAt(0).toUpperCase()}
         </div>
         <div style={{ flex: 1 }}>
           <h3
@@ -174,7 +204,7 @@ const ChatWindow = ({ selectedChat }: ChatWindowProps) => {
               margin: 0,
             }}
           >
-            Neo
+            {contactName}
           </h3>
           <p
             style={{

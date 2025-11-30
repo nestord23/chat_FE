@@ -6,10 +6,16 @@ import ChatWindow from './ChatWindow';
 
 const ChatContainer = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { logout } = useAuthContext();
+  const { user, logout } = useAuthContext();
   const navigate = useNavigate();
   const [selectedChat, setSelectedChat] = useState<string | null>(null);
+  const [selectedContactName, setSelectedContactName] = useState<string>('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  const handleSelectChat = (chatId: string, contactName?: string) => {
+    setSelectedChat(chatId);
+    setSelectedContactName(contactName || 'Usuario');
+  };
 
   // Matrix rain effect
   useEffect(() => {
@@ -163,8 +169,18 @@ const ChatContainer = () => {
               HACK CHAT
             </h1>
           </div>
-
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <span
+              style={{
+                fontFamily: 'Orbitron, sans-serif',
+                fontSize: '0.875rem',
+                color: '#4ade80',
+                textShadow: '0 0 5px rgba(0, 255, 0, 0.5)',
+                letterSpacing: '0.05em',
+              }}
+            >
+              {user?.username || 'USER'}
+            </span>
             <button
               onClick={handleLogout}
               style={{
@@ -204,12 +220,12 @@ const ChatContainer = () => {
               borderRight: isSidebarOpen ? '1px solid rgba(0, 255, 0, 0.3)' : 'none',
             }}
           >
-            <ChatSidebar selectedChat={selectedChat} onSelectChat={setSelectedChat} />
+            <ChatSidebar selectedChat={selectedChat} onSelectChat={handleSelectChat} />
           </div>
 
           {/* Main Chat Window */}
           <div style={{ flex: 1, overflow: 'hidden' }}>
-            <ChatWindow selectedChat={selectedChat} />
+            <ChatWindow selectedChat={selectedChat} contactName={selectedContactName} />
           </div>
         </div>
       </div>

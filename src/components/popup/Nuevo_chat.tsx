@@ -5,7 +5,7 @@ import { X, UserPlus, Terminal, Search, Loader2 } from 'lucide-react';
 interface ChatPopupProps {
   isOpen: boolean;
   onClose: () => void;
-  onStartChat?: (userId: string, username: string) => void;
+  onStartChat?: (userId: string, username: string, email: string) => void;
 }
 
 interface User {
@@ -166,7 +166,7 @@ export default function ChatPopup({ isOpen, onClose, onStartChat }: ChatPopupPro
     }
 
     if (onStartChat) {
-      onStartChat(selectedUser.id, selectedUser.username);
+      onStartChat(selectedUser.id, selectedUser.username, selectedUser.email);
     }
 
     // Reset

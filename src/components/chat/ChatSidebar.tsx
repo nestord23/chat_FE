@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ChatPopup from '../popup/Nuevo_chat';
+import { chatService } from '../../services/chatService';
+import { useAuthContext } from '../../contexts/AuthContext';
+import type { Conversation } from '../../types/chat.types';
 interface ChatSidebarProps {
   selectedChat: string | null;
-  onSelectChat: (chatId: string) => void;
+  onSelectChat: (chatId: string, contactName?: string) => void;
 }
 
 interface Contact {
@@ -16,48 +19,52 @@ interface Contact {
 }
 
 const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
+  const { user } = useAuthContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Mock data - esto se reemplazará con datos reales del backend
-  const contacts: Contact[] = [
-    {
-      id: '1',
-      name: 'Neo',
-      email: 'neo@matrix.sys',
-      status: 'online',
-      lastMessage: 'Follow the white rabbit...',
-      unreadCount: 3,
-      lastSeen: 'Ahora',
-    },
-    {
-      id: '2',
-      name: 'Trinity',
-      email: 'trinity@matrix.sys',
-      status: 'online',
-      lastMessage: 'The Matrix has you...',
-      unreadCount: 0,
-      lastSeen: 'Hace 5 min',
-    },
-    {
-      id: '3',
-      name: 'Morpheus',
-      email: 'morpheus@matrix.sys',
-      status: 'away',
-      lastMessage: 'What is real?',
-      unreadCount: 1,
-      lastSeen: 'Hace 1 hora',
-    },
-    {
-      id: '4',
-      name: 'Agent Smith',
-      email: 'smith@matrix.sys',
-      status: 'offline',
-      lastMessage: 'Mr. Anderson...',
-      unreadCount: 0,
-      lastSeen: 'Hace 2 días',
-    },
-  ];
+  // Cargar conversaciones del backend
+  useEffect(() => {
+    const loadConversations = async () => {
+      console.log('🔄 Iniciando carga de conversaciones...');
+      console.log('👤 Usuario actual:', user);
+
+      try {
+        setLoading(true);
+        setError(null);
+
+        console.log('📡 Llamando a chatService.getConversations()...');
+        const conversations = await chatService.getConversations();
+        console.log('✅ Conversaciones recibidas:', conversations);
+
+        // Convertir conversaciones a formato Contact
+        const contactsFromConversations: Contact[] = conversations.map((conv: Conversation) => ({
+          id: conv.other_user_id,
+          name: conv.username,
+          email: '', // El backend no devuelve email en conversaciones
+          status: 'online', // Por defecto, se puede actualizar con WebSocket
+          lastMessage: conv.last_message,
+          unreadCount: conv.unread_count,
+          lastSeen: conv.last_message_time,
+        }));
+
+        console.log('👥 Contactos procesados:', contactsFromConversations);
+        setContacts(contactsFromConversations);
+      } catch (err: any) {
+        console.error('❌ Error al cargar conversaciones:', err);
+        setError(err.message || 'Error al cargar conversaciones');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user) {
+      loadConversations();
+    }
+  }, [user]);
 
   const filteredContacts = contacts.filter(
     (contact) =>
@@ -147,7 +154,7 @@ const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
           padding: '0 0.5rem',
         }}
       >
-        {filteredContacts.length === 0 ? (
+        {loading ? (
           <div
             style={{
               padding: '2rem 1rem',
@@ -157,13 +164,71 @@ const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
               fontSize: '0.875rem',
             }}
           >
-            No se encontraron contactos
+            <div style={{ marginBottom: '0.5rem', fontSize: '2rem' }}>⏳</div>
+            <div>Cargando conversaciones...</div>
+          </div>
+        ) : error ? (
+          <div
+            style={{
+              padding: '2rem 1rem',
+              textAlign: 'center',
+              color: 'rgba(239, 68, 68, 0.7)',
+              fontFamily: 'Orbitron, sans-serif',
+              fontSize: '0.875rem',
+            }}
+          >
+            <div style={{ marginBottom: '0.5rem', fontSize: '2rem' }}>⚠️</div>
+            <div>{error}</div>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                marginTop: '1rem',
+                padding: '0.5rem 1rem',
+                borderRadius: '0.5rem',
+                border: '1px solid rgba(239, 68, 68, 0.5)',
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                color: '#ef4444',
+                fontFamily: 'Orbitron, sans-serif',
+                fontSize: '0.75rem',
+                cursor: 'pointer',
+              }}
+            >
+              Reintentar
+            </button>
+          </div>
+        ) : filteredContacts.length === 0 ? (
+          <div
+            style={{
+              padding: '2rem 1rem',
+              textAlign: 'center',
+              color: 'rgba(0, 255, 0, 0.5)',
+              fontFamily: 'Orbitron, sans-serif',
+              fontSize: '0.875rem',
+            }}
+          >
+            {contacts.length === 0 ? (
+              <>
+                <div style={{ marginBottom: '0.5rem', fontSize: '2rem' }}>💬</div>
+                <div>No tienes contactos aún</div>
+                <div
+                  style={{
+                    fontSize: '0.75rem',
+                    marginTop: '0.5rem',
+                    color: 'rgba(0, 255, 0, 0.4)',
+                  }}
+                >
+                  Haz clic en "NUEVO CHAT" para agregar
+                </div>
+              </>
+            ) : (
+              'No se encontraron contactos'
+            )}
           </div>
         ) : (
           filteredContacts.map((contact) => (
             <div
               key={contact.id}
-              onClick={() => onSelectChat(contact.id)}
+              onClick={() => onSelectChat(contact.id, contact.name)}
               style={{
                 padding: '1rem',
                 margin: '0.25rem',
@@ -344,9 +409,53 @@ const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
       <ChatPopup
         isOpen={isPopupOpen}
         onClose={() => setIsPopupOpen(false)}
-        onStartChat={(username) => {
-          console.log('Iniciar chat con:', username);
-          // Aquí puedes agregar la lógica para crear el chat
+        onStartChat={async (userId: string, username: string, email: string) => {
+          console.log('Iniciar chat con:', username, 'ID:', userId, 'Email:', email);
+
+          try {
+            // Verificar si el contacto ya existe
+            const existingContact = contacts.find((c) => c.id === userId);
+
+            if (!existingContact) {
+              // Crear conversación en el backend
+              await chatService.createConversation(userId);
+
+              // Crear nuevo contacto
+              const newContact: Contact = {
+                id: userId,
+                name: username,
+                email: email,
+                status: 'online',
+                lastMessage: undefined,
+                unreadCount: 0,
+                lastSeen: 'Ahora',
+              };
+
+              // Agregar el nuevo contacto a la lista
+              setContacts((prev) => [newContact, ...prev]);
+            }
+
+            // Seleccionar el chat automáticamente
+            onSelectChat(userId, username);
+
+            // Cerrar el popup
+            setIsPopupOpen(false);
+          } catch (err: any) {
+            console.error('Error al crear conversación:', err);
+            // Aún así intentamos abrir el chat localmente
+            const newContact: Contact = {
+              id: userId,
+              name: username,
+              email: email,
+              status: 'online',
+              lastMessage: undefined,
+              unreadCount: 0,
+              lastSeen: 'Ahora',
+            };
+            setContacts((prev) => [newContact, ...prev]);
+            onSelectChat(userId, username);
+            setIsPopupOpen(false);
+          }
         }}
       />
     </div>
