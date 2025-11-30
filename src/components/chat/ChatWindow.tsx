@@ -10,9 +10,20 @@ interface ChatWindowProps {
   contactName?: string;
 }
 
+// ✅ Interfaz para mensajes formateados
+interface FormattedMessage {
+  id: string;
+  senderId: string;
+  text: string;
+  timestamp: string;
+  isMine: boolean;
+  status: string;
+  error?: boolean;
+}
+
 const ChatWindow = ({ selectedChat, contactName = 'Usuario' }: ChatWindowProps) => {
   const { user } = useAuthContext();
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] = useState<FormattedMessage[]>([]);
 
   // Cargar mensajes cuando se selecciona un chat
   useEffect(() => {
@@ -23,7 +34,7 @@ const ChatWindow = ({ selectedChat, contactName = 'Usuario' }: ChatWindowProps) 
         const { messages: fetchedMessages } = await chatService.getMessages(selectedChat);
 
         // Convertir mensajes del backend al formato del componente
-        const formattedMessages = fetchedMessages.map((msg: Message) => ({
+        const formattedMessages: FormattedMessage[] = fetchedMessages.map((msg: Message) => ({
           id: msg.id,
           senderId: msg.user_id,
           text: msg.content,
@@ -36,7 +47,7 @@ const ChatWindow = ({ selectedChat, contactName = 'Usuario' }: ChatWindowProps) 
 
         // Marcar mensajes como vistos
         await chatService.markMessagesAsSeen(selectedChat);
-      } catch (err: any) {
+      } catch (err) {
         console.error('Error al cargar mensajes:', err);
         setMessages([]);
       }
@@ -49,13 +60,13 @@ const ChatWindow = ({ selectedChat, contactName = 'Usuario' }: ChatWindowProps) 
     if (!selectedChat || !user) return;
 
     // Agregar mensaje optimísticamente
-    const tempMessage = {
+    const tempMessage: FormattedMessage = {
       id: `temp-${Date.now()}`,
       senderId: user.id,
       text,
       timestamp: new Date().toISOString(),
       isMine: true,
-      status: 'enviado' as const,
+      status: 'enviado',
     };
 
     setMessages((prev) => [...prev, tempMessage]);
@@ -79,7 +90,7 @@ const ChatWindow = ({ selectedChat, contactName = 'Usuario' }: ChatWindowProps) 
             : msg
         )
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error al enviar mensaje:', err);
       // Marcar el mensaje como error
       setMessages((prev) =>

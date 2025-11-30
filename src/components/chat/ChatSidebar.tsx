@@ -53,9 +53,10 @@ const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
 
         console.log('👥 Contactos procesados:', contactsFromConversations);
         setContacts(contactsFromConversations);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('❌ Error al cargar conversaciones:', err);
-        setError(err.message || 'Error al cargar conversaciones');
+        const errorMessage = err instanceof Error ? err.message : 'Error al cargar conversaciones';
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
@@ -440,7 +441,7 @@ const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
 
             // Cerrar el popup
             setIsPopupOpen(false);
-          } catch (err: any) {
+          } catch (err: unknown) {
             console.error('Error al crear conversación:', err);
             // Aún así intentamos abrir el chat localmente
             const newContact: Contact = {
