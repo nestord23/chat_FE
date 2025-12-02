@@ -36,9 +36,22 @@ type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 let socket: TypedSocket | null = null;
 
 export const initializeSocket = (token: string): TypedSocket => {
+  console.log('🔧 initializeSocket llamado');
+  console.log('🔗 SOCKET_URL:', SOCKET_URL);
+  console.log('🎫 Token presente:', token ? `Sí (${token.substring(0, 10)}...)` : 'No');
+
   if (socket?.connected) {
+    console.log('♻️ Socket ya conectado, reutilizando');
     return socket;
   }
+
+  if (socket && !socket.connected) {
+    console.log('🔄 Socket existe pero no está conectado, reconectando...');
+    socket.connect();
+    return socket;
+  }
+
+  console.log('🆕 Creando nuevo socket en:', `${SOCKET_URL}/private`);
 
   socket = io(`${SOCKET_URL}/private`, {
     auth: { token },
@@ -48,6 +61,21 @@ export const initializeSocket = (token: string): TypedSocket => {
     reconnectionAttempts: 5,
   });
 
+  // Agregar listeners de debug
+  socket.on('connect', () => {
+    console.log('🎉 Socket conectado! ID:', socket?.id);
+  });
+
+  socket.on('connect_error', (error) => {
+    console.error('💥 Error de conexión:', error.message);
+    console.error('📋 Detalles del error:', error);
+  });
+
+  socket.on('error', (error) => {
+    console.error('⚠️ Error del socket:', error);
+  });
+
+  console.log('✅ Socket creado, listo para conectar');
   return socket;
 };
 

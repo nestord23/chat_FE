@@ -408,19 +408,17 @@ const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
         </button>
       </div>
       <ChatPopup
+        key={isPopupOpen ? 'open' : 'closed'} // ✅ Agrega esta línea
         isOpen={isPopupOpen}
         onClose={() => setIsPopupOpen(false)}
         onStartChat={async (userId: string, username: string, email: string) => {
           console.log('Iniciar chat con:', username, 'ID:', userId, 'Email:', email);
-
           try {
             // Verificar si el contacto ya existe
             const existingContact = contacts.find((c) => c.id === userId);
-
             if (!existingContact) {
               // Crear conversación en el backend
               await chatService.createConversation(userId);
-
               // Crear nuevo contacto
               const newContact: Contact = {
                 id: userId,
@@ -431,14 +429,11 @@ const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
                 unreadCount: 0,
                 lastSeen: 'Ahora',
               };
-
               // Agregar el nuevo contacto a la lista
               setContacts((prev) => [newContact, ...prev]);
             }
-
             // Seleccionar el chat automáticamente
             onSelectChat(userId, username);
-
             // Cerrar el popup
             setIsPopupOpen(false);
           } catch (err: unknown) {

@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, UserPlus, Terminal, Search, Loader2 } from 'lucide-react';
+import { useDebounce } from '../../hooks/useDebounce';
+import { useUserSearch } from '../../hooks/useUserSearch';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface ChatPopupProps {
   isOpen: boolean;
@@ -15,155 +18,23 @@ interface User {
   avatar_url?: string;
 }
 
-interface SearchResult {
-  success: boolean;
-  data: User[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-  cached?: boolean;
-}
-
 export default function ChatPopup({ isOpen, onClose, onStartChat }: ChatPopupProps) {
   const [username, setUsername] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const debounceTimerRef = useRef<number | null>(null);
+  // Custom hooks
+  const debouncedUsername = useDebounce(username, 500);
+  const { Loading: loading, result: searchResults, error } = useUserSearch(debouncedUsername);
+  useBodyScrollLock(isOpen);
 
-  // Función de debounce
-  const debounce = (func: Function, delay: number) => {
-    return (...args: any[]) => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      debounceTimerRef.current = setTimeout(() => func(...args), delay);
-    };
-  };
-
-  // Función para buscar usuarios en el backend
-  const searchUsers = async (query: string) => {
-    if (query.length < 2) {
-      setSearchResults([]);
-      setError(null);
-      return;
-    }
-
-    // Validación del lado del cliente
-    if (query.length > 50) {
-      setError('Máximo 50 caracteres');
-      return;
-    }
-
-    const allowedPattern = /^[a-zA-Z0-9\s\-_áéíóúÁÉÍÓÚñÑüÜ]+$/;
-    if (!allowedPattern.test(query)) {
-      setError('Caracteres no permitidos');
-      return;
-    }
-
-    // Cancelar búsqueda anterior
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
-    // Crear nuevo AbortController
-    abortControllerRef.current = new AbortController();
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      console.log('🔍 Buscando usuario:', query);
-
-      const response = await fetch(
-        `http://localhost:3001/api/users/search?q=${encodeURIComponent(query)}&page=1&limit=10`,
-        {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          signal: abortControllerRef.current.signal,
-        }
-      );
-
-      console.log('📡 Respuesta del servidor:', response.status, response.statusText);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Error del servidor:', errorData);
-
-        switch (response.status) {
-          case 400:
-            throw new Error(errorData.message || 'Búsqueda inválida');
-          case 401:
-            throw new Error('Debes iniciar sesión');
-          case 429:
-            throw new Error('Demasiadas búsquedas. Espera un momento.');
-          case 500:
-            throw new Error('Error del servidor');
-          default:
-            throw new Error('Error desconocido');
-        }
-      }
-
-      const data: SearchResult = await response.json();
-      console.log('✅ Datos recibidos:', data);
-
-      if (data.success) {
-        console.log('👥 Usuarios encontrados:', data.data.length);
-        setSearchResults(data.data);
-        if (data.cached) {
-          console.log('💾 Resultado del caché del backend');
-        }
-      } else {
-        throw new Error('Error en la búsqueda');
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        console.log('⏹️ Búsqueda cancelada');
-        return;
-      }
-      console.error('❌ Error en la búsqueda:', err);
-      setError(err.message || 'Error al buscar usuarios');
-      setSearchResults([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Búsqueda con debouncing
-  const debouncedSearch = useCallback(
-    debounce((query: string) => searchUsers(query), 500),
-    []
-  );
-
-  // Manejar cambio en el input
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setUsername(value);
-    debouncedSearch(value);
-  };
-
-  // Manejar selección de usuario
+  // Handlers
   const handleSelectUser = (user: User) => {
     setSelectedUser(user);
     setUsername(user.username);
-    setSearchResults([]);
   };
 
-  // Iniciar chat con el usuario seleccionado
   const handleSubmit = () => {
-    if (!selectedUser) {
-      setError('Selecciona un usuario de la lista');
-      return;
-    }
+    if (!selectedUser) return;
 
     if (onStartChat) {
       onStartChat(selectedUser.id, selectedUser.username, selectedUser.email);
@@ -172,7 +43,6 @@ export default function ChatPopup({ isOpen, onClose, onStartChat }: ChatPopupPro
     // Reset
     setUsername('');
     setSelectedUser(null);
-    setSearchResults([]);
     onClose();
   };
 
@@ -184,41 +54,6 @@ export default function ChatPopup({ isOpen, onClose, onStartChat }: ChatPopupPro
       onClose();
     }
   };
-
-  // Limpiar al cerrar
-  useEffect(() => {
-    if (!isOpen) {
-      setUsername('');
-      setSearchResults([]);
-      setError(null);
-      setSelectedUser(null);
-      setLoading(false);
-    }
-  }, [isOpen]);
-
-  // Prevenir scroll del body
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [isOpen]);
-
-  // Limpiar timers al desmontar
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
 
   if (!isOpen) return null;
 
@@ -373,7 +208,7 @@ export default function ChatPopup({ isOpen, onClose, onStartChat }: ChatPopupPro
                     type="text"
                     id="username"
                     value={username}
-                    onChange={handleInputChange}
+                    onChange={(e) => setUsername(e.target.value)}
                     onKeyDown={handleKeyPress}
                     placeholder="Escribe para buscar..."
                     className="relative w-full pl-11 pr-12 py-4 rounded-lg outline-none transition-all duration-300 font-mono text-sm"
@@ -409,7 +244,7 @@ export default function ChatPopup({ isOpen, onClose, onStartChat }: ChatPopupPro
               )}
 
               {/* Search Results */}
-              {searchResults.length > 0 && (
+              {searchResults.length > 0 && !selectedUser && (
                 <div
                   className="max-h-64 overflow-y-auto rounded-lg"
                   style={{

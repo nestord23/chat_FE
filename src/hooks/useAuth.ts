@@ -33,13 +33,22 @@ export const useAuth = () => {
       if (response.success && response.user) {
         console.log('✅ Sesión activa encontrada:', response.user);
         setUser(response.user);
+
+        // ✅ Recuperar también la sesión de Supabase para tener el token
+        const { data } = await supabase.auth.getSession();
+        if (data.session) {
+          console.log('🔑 Sesión de Supabase recuperada');
+          setSession(data.session);
+        }
       } else {
         console.log('⚠️ No hay sesión activa');
         setUser(null);
+        setSession(null);
       }
-    } catch (error: any) {
-      console.log('ℹ️ No hay sesión activa:', error.message);
+    } catch (error: unknown) {
+      console.log('ℹ️ No hay sesión activa:', error);
       setUser(null);
+      setSession(null);
     } finally {
       setLoading(false);
     }
@@ -63,7 +72,7 @@ export const useAuth = () => {
       }
 
       return result;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error en registro:', error);
       throw error;
     }
@@ -91,7 +100,7 @@ export const useAuth = () => {
       }
 
       return result;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error en login:', error);
       setUser(null);
       throw error;
