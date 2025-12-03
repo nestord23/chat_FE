@@ -8,13 +8,21 @@ const ChatContainer = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { user, logout } = useAuthContext();
   const navigate = useNavigate();
-  const [selectedChat, setSelectedChat] = useState<string | null>(null);
-  const [selectedContactName, setSelectedContactName] = useState<string>('');
+  const [selectedChat, setSelectedChat] = useState<string | null>(() => {
+    return localStorage.getItem('selectedChat');
+  });
+  const [selectedContactName, setSelectedContactName] = useState<string>(() => {
+    return localStorage.getItem('selectedContactName') || '';
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   const handleSelectChat = (chatId: string, contactName?: string) => {
     setSelectedChat(chatId);
-    setSelectedContactName(contactName || 'Usuario');
+    localStorage.setItem('selectedChat', chatId);
+    if (contactName) {
+      setSelectedContactName(contactName);
+      localStorage.setItem('selectedContactName', contactName);
+    }
   };
 
   // Matrix rain effect

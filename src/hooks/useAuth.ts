@@ -123,7 +123,37 @@ export const useAuth = () => {
   };
 
   const getAccessToken = (): string | undefined => {
-    return session?.access_token;
+    // Primero intentar desde la sesión en memoria
+    if (session?.access_token) {
+      return session.access_token;
+    }
+
+    // Si no hay sesión en memoria, intentar obtener de Supabase
+    // Nota: Esto es síncrono y puede no funcionar si la sesión no está cargada
+    console.warn('⚠️ No hay sesión en memoria, intenta recargar la página');
+    return undefined;
+  };
+
+  // Nueva función asíncrona para obtener el token de forma confiable
+  const getAccessTokenAsync = async (): Promise<string | undefined> => {
+    // Primero intentar desde la sesión en memoria
+    if (session?.access_token) {
+      return session.access_token;
+    }
+
+    // Si no hay sesión, obtener de Supabase
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.access_token) {
+        console.log('🔑 Token obtenido de Supabase');
+        setSession(data.session);
+        return data.session.access_token;
+      }
+    } catch (error) {
+      console.error('❌ Error obteniendo token:', error);
+    }
+
+    return undefined;
   };
 
   return {
@@ -134,5 +164,6 @@ export const useAuth = () => {
     login,
     logout,
     getAccessToken,
+    getAccessTokenAsync,
   };
 };

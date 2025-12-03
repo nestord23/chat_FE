@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from '../hooks/useAuth';
@@ -8,20 +9,21 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  register: (data: RegisterData) => Promise<any>;
-  login: (data: LoginData) => Promise<any>;
+  register: (data: RegisterData) => Promise<unknown>;
+  login: (data: LoginData) => Promise<unknown>;
   logout: () => Promise<void>;
   getAccessToken: () => string | undefined;
+  getAccessTokenAsync: () => Promise<string | undefined>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const auth = useAuth();
-
   return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
 };
 
+// ← Agregar esto
 export const useAuthContext = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
@@ -29,3 +31,5 @@ export const useAuthContext = () => {
   }
   return context;
 };
+
+export { AuthContext };

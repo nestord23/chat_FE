@@ -28,13 +28,42 @@ interface FormattedMessage {
 }
 
 const ChatWindow = ({ selectedChat, contactName = 'Usuario' }: ChatWindowProps) => {
-  const { user, getAccessToken } = useAuthContext();
-  const [messages, setMessages] = useState<FormattedMessage[]>([]);
+  const { user, getAccessTokenAsync } = useAuthContext();
+
+  // Función para obtener mensajes del localStorage
+  const getLocalMessages = (chatId: string): FormattedMessage[] => {
+    try {
+      const cached = localStorage.getItem(`chat_messages_${chatId}`);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  // Función para guardar mensajes en localStorage
+  const saveLocalMessages = (chatId: string, msgs: FormattedMessage[]) => {
+    try {
+      localStorage.setItem(`chat_messages_${chatId}`, JSON.stringify(msgs));
+    } catch (err) {
+      console.error('Error al guardar mensajes localmente:', err);
+    }
+  };
+
+  // Inicializar con mensajes del localStorage si existen
+  const [messages, setMessages] = useState<FormattedMessage[]>(() => {
+    return selectedChat ? getLocalMessages(selectedChat) : [];
+  });
 
   // Cargar mensajes cuando se selecciona un chat
   useEffect(() => {
     const loadMessages = async () => {
       if (!selectedChat || !user) return;
+
+      // Primero cargar del caché local
+      const cachedMessages = getLocalMessages(selectedChat);
+      if (cachedMessages.length > 0) {
+        setMessages(cachedMessages);
+      }
 
       try {
         const { messages: fetchedMessages } = await chatService.getMessages(selectedChat);
@@ -50,135 +79,241 @@ const ChatWindow = ({ selectedChat, contactName = 'Usuario' }: ChatWindowProps) 
         }));
 
         setMessages(formattedMessages);
+        saveLocalMessages(selectedChat, formattedMessages);
 
         // Marcar mensajes como vistos
         await chatService.markMessagesAsSeen(selectedChat);
       } catch (err) {
         console.error('Error al cargar mensajes:', err);
-        setMessages([]);
+        // Si falla, mantener los mensajes del caché
+        if (cachedMessages.length === 0) {
+          setMessages([]);
+        }
       }
     };
 
     loadMessages();
   }, [selectedChat, user]);
 
+  // Sincronizar mensajes con localStorage cuando cambien
+  useEffect(() => {
+    if (selectedChat && messages.length > 0) {
+      saveLocalMessages(selectedChat, messages);
+    }
+  }, [messages, selectedChat]);
+
   // Inicializar WebSocket y escuchar eventos
   useEffect(() => {
     if (!user) return;
 
-    // Obtener el token del contexto de autenticación
-    const token = getAccessToken();
+    const initSocket = async () => {
+      // Obtener el token de forma asíncrona
+      const token = await getAccessTokenAsync();
 
-    if (!token) {
-      console.error('❌ No se encontró token para inicializar WebSocket');
-      console.log('💡 Asegúrate de estar autenticado correctamente');
-      return;
-    }
+      if (!token) {
+        console.error('❌ No se encontró token para inicializar WebSocket');
+        console.log('💡 Asegúrate de estar autenticado correctamente');
+        return;
+      }
 
-    console.log('🔌 Inicializando WebSocket para usuario:', user.id);
+      console.log('🔌 Inicializando WebSocket para usuario:', user.id);
+      console.log('🔑 Token obtenido:', token.substring(0, 20) + '...');
 
-    // Inicializar socket
-    const socket = initializeSocket(token);
+      // Inicializar socket
+      const socket = initializeSocket(token);
 
-    // Eventos de conexión para debugging
-    socket.on('connect', () => {
-      console.log('✅ WebSocket CONECTADO exitosamente');
-      console.log('🆔 Socket ID:', socket.id);
-    });
+      // Eventos de conexión para debugging
+      socket.on('connect', () => {
+        console.log('✅ WebSocket CONECTADO exitosamente');
+        console.log('🆔 Socket ID:', socket.id);
+      });
 
-    socket.on('connect_error', (error) => {
-      console.error('❌ Error de conexión WebSocket:', error.message);
-    });
+      socket.on('connect_error', (error) => {
+        console.error('❌ Error de conexión WebSocket:', error.message);
+      });
 
-    socket.on('disconnect', (reason) => {
-      console.warn('⚠️ WebSocket desconectado. Razón:', reason);
-    });
+      socket.on('disconnect', (reason) => {
+        console.warn('⚠️ WebSocket desconectado. Razón:', reason);
+      });
 
-    // Conectar el socket
-    socket.connect();
-    console.log('🔄 Intentando conectar WebSocket...');
+      // Conectar el socket
+      socket.connect();
+      console.log('🔄 Intentando conectar WebSocket...');
 
-    // Escuchar mensajes nuevos de otros usuarios
-    const handleNewMessage = (data: NewMessagePayload) => {
-      console.log('📨 Nuevo mensaje recibido:', data);
-      console.log('👤 De usuario:', data.from);
-      console.log('💬 Chat actual seleccionado:', selectedChat);
-      console.log('🔍 ¿Coincide?', data.from === selectedChat);
+      // Escuchar mensajes nuevos de otros usuarios
+      const handleNewMessage = (data: NewMessagePayload) => {
+        console.log('📨 Nuevo mensaje recibido:', data);
+        console.log('👤 De usuario:', data.from);
+        console.log('💬 Chat actual seleccionado:', selectedChat);
+        console.log('🔍 ¿Coincide?', data.from === selectedChat);
 
-      // Solo agregar si el mensaje es del chat actual
-      if (data.from === selectedChat) {
-        console.log('✅ Agregando mensaje al chat actual');
-        const newMessage: FormattedMessage = {
-          id: data.id.toString(),
-          senderId: data.from,
-          text: data.content,
-          timestamp: data.created_at,
-          isMine: false,
-          status: 'entregado',
-        };
+        // Solo agregar si el mensaje es del chat actual
+        if (data.from === selectedChat) {
+          console.log('✅ Agregando mensaje al chat actual');
+          const newMessage: FormattedMessage = {
+            id: data.id.toString(),
+            senderId: data.from,
+            text: data.content,
+            timestamp: data.created_at,
+            isMine: false,
+            status: 'entregado',
+          };
+
+          setMessages((prev) => {
+            console.log('📝 Mensajes antes:', prev.length);
+            const updated = [...prev, newMessage];
+            console.log('📝 Mensajes después:', updated.length);
+
+            // Guardar en localStorage
+            saveLocalMessages(selectedChat, updated);
+
+            return updated;
+          });
+
+          // Marcar como visto automáticamente usando WebSocket
+          const socket = getSocket();
+          if (socket && socket.connected) {
+            socket.emit('mark_seen', { messageId: data.id });
+          }
+        } else {
+          console.log('⏭️ Mensaje ignorado - no es del chat actual');
+        }
+      };
+
+      // Escuchar confirmación de mensaje enviado
+      const handleMessageSent = (data: MessageSentPayload) => {
+        console.log('✅ Mensaje enviado confirmado:', data);
 
         setMessages((prev) => {
-          console.log('📝 Mensajes antes:', prev.length);
-          const updated = [...prev, newMessage];
-          console.log('📝 Mensajes después:', updated.length);
+          const updated = prev.map((msg) => {
+            // Buscar mensaje temporal y actualizarlo con el ID real del servidor
+            if (msg.id.startsWith('temp-')) {
+              return {
+                ...msg,
+                id: data.id.toString(),
+                status: data.estado,
+                timestamp: data.created_at,
+              };
+            }
+            return msg;
+          });
+
+          // Guardar en localStorage
+          if (selectedChat) {
+            saveLocalMessages(selectedChat, updated);
+          }
+
           return updated;
         });
+      };
 
-        // Marcar como visto automáticamente si el chat está abierto
-        if (selectedChat === data.from) {
-          chatService.markMessagesAsSeen(data.from).catch(console.error);
+      // Escuchar confirmación de mensaje entregado
+      const handleMessageDelivered = (data: MessageDeliveredPayload) => {
+        console.log('📬 Mensaje entregado:', data);
+
+        setMessages((prev) => {
+          const updated = prev.map((msg) =>
+            msg.id === data.messageId.toString() ? { ...msg, status: 'entregado' } : msg
+          );
+
+          if (selectedChat) {
+            saveLocalMessages(selectedChat, updated);
+          }
+
+          return updated;
+        });
+      };
+
+      // Escuchar confirmación de mensaje visto
+      const handleMessageSeen = (data: { messageId: number; seenAt: string }) => {
+        console.log('👁️ Mensaje visto:', data);
+
+        setMessages((prev) => {
+          const updated = prev.map((msg) =>
+            msg.id === data.messageId.toString() ? { ...msg, status: 'visto' } : msg
+          );
+
+          if (selectedChat) {
+            saveLocalMessages(selectedChat, updated);
+          }
+
+          return updated;
+        });
+      };
+
+      // Escuchar estado de usuario (online/offline)
+      const handleUserStatus = (data: { userId: string; status: string }) => {
+        console.log('🟢 Estado de usuario:', data);
+        // Aquí puedes actualizar el estado de conexión del contacto en la UI
+      };
+
+      // Escuchar indicador de escritura
+      const handleUserTyping = (data: { from: string }) => {
+        console.log('⌨️ Usuario escribiendo:', data);
+        if (data.from === selectedChat) {
+          // Mostrar indicador de "escribiendo..."
         }
-      } else {
-        console.log('⏭️ Mensaje ignorado - no es del chat actual');
-      }
+      };
+
+      const handleUserStopTyping = (data: { from: string }) => {
+        console.log('🛑 Usuario dejó de escribir:', data);
+        if (data.from === selectedChat) {
+          // Ocultar indicador de "escribiendo..."
+        }
+      };
+
+      // Registrar event listeners
+      socket.on('new_message', handleNewMessage);
+      socket.on('message_sent', handleMessageSent);
+      socket.on('message_delivered', handleMessageDelivered);
+      socket.on('message_seen', handleMessageSeen);
+      socket.on('user_status', handleUserStatus);
+      socket.on('user_typing', handleUserTyping);
+      socket.on('user_stop_typing', handleUserStopTyping);
+
+      // Cleanup al desmontar
+      return () => {
+        socket.off('new_message', handleNewMessage);
+        socket.off('message_sent', handleMessageSent);
+        socket.off('message_delivered', handleMessageDelivered);
+        socket.off('message_seen', handleMessageSeen);
+        socket.off('user_status', handleUserStatus);
+        socket.off('user_typing', handleUserTyping);
+        socket.off('user_stop_typing', handleUserStopTyping);
+      };
     };
 
-    // Escuchar confirmación de mensaje enviado
-    const handleMessageSent = (data: MessageSentPayload) => {
-      console.log('✅ Mensaje enviado confirmado:', data);
+    // Llamar a la función de inicialización
+    initSocket();
 
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === `temp-${data.id}` || msg.id === data.id.toString()
-            ? { ...msg, id: data.id.toString(), status: data.estado }
-            : msg
-        )
-      );
-    };
-
-    // Escuchar confirmación de mensaje entregado
-    const handleMessageDelivered = (data: MessageDeliveredPayload) => {
-      console.log('📬 Mensaje entregado:', data);
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === data.messageId.toString() ? { ...msg, status: 'entregado' } : msg
-        )
-      );
-    };
-
-    // Registrar event listeners
-    socket.on('new_message', handleNewMessage);
-    socket.on('message_sent', handleMessageSent);
-    socket.on('message_delivered', handleMessageDelivered);
-
-    // Cleanup al desmontar
-    return () => {
-      socket.off('new_message', handleNewMessage);
-      socket.off('message_sent', handleMessageSent);
-      socket.off('message_delivered', handleMessageDelivered);
-    };
-  }, [user, selectedChat, getAccessToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, selectedChat]);
 
   const handleSendMessage = async (text: string) => {
     if (!selectedChat || !user) return;
 
-    // Agregar mensaje optimísticamente
+    const socket = getSocket();
+
+    // Validar que el socket esté conectado
+    if (!socket || !socket.connected) {
+      console.error('❌ Socket no conectado. No se puede enviar el mensaje.');
+      alert('No hay conexión con el servidor. Por favor, recarga la página.');
+      return;
+    }
+
+    // Validar contenido del mensaje
+    const trimmed = text.trim();
+    if (!trimmed || trimmed.length > 5000) {
+      console.error('❌ Mensaje inválido (vacío o muy largo)');
+      return;
+    }
+
+    // Agregar mensaje optimísticamente con ID temporal
     const tempId = `temp-${Date.now()}`;
     const tempMessage: FormattedMessage = {
       id: tempId,
       senderId: user.id,
-      text,
+      text: trimmed,
       timestamp: new Date().toISOString(),
       isMine: true,
       status: 'enviando',
@@ -187,40 +322,14 @@ const ChatWindow = ({ selectedChat, contactName = 'Usuario' }: ChatWindowProps) 
     setMessages((prev) => [...prev, tempMessage]);
 
     try {
-      const socket = getSocket();
+      // Enviar via WebSocket (el backend /private SOLO acepta WebSocket)
+      console.log('📤 Enviando mensaje via WebSocket:', { to: selectedChat, content: trimmed });
+      socket.emit('send_message', { to: selectedChat, content: trimmed });
 
-      if (socket && socket.connected) {
-        // Enviar via WebSocket (tiempo real)
-        console.log('📤 Enviando mensaje via WebSocket:', { to: selectedChat, content: text });
-        socket.emit('send_message', { to: selectedChat, content: text });
-
-        // Actualizar estado a "enviado" optimísticamente
-        setMessages((prev) =>
-          prev.map((msg) => (msg.id === tempId ? { ...msg, status: 'enviado' } : msg))
-        );
-      } else {
-        // Fallback: Enviar via HTTP si WebSocket no está disponible
-        console.log('📤 WebSocket no disponible, enviando via HTTP');
-        const sentMessage = await chatService.sendMessage(selectedChat, text);
-
-        // Actualizar con el mensaje real del backend
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === tempId
-              ? {
-                  id: sentMessage.id,
-                  senderId: sentMessage.user_id,
-                  text: sentMessage.content,
-                  timestamp: sentMessage.created_at,
-                  isMine: true,
-                  status: sentMessage.status,
-                }
-              : msg
-          )
-        );
-      }
+      // El evento 'message_sent' actualizará el mensaje temporal con el ID real
     } catch (err) {
       console.error('❌ Error al enviar mensaje:', err);
+
       // Marcar el mensaje como error
       setMessages((prev) =>
         prev.map((msg) => (msg.id === tempId ? { ...msg, error: true, status: 'error' } : msg))

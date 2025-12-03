@@ -22,8 +22,11 @@ const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
   const { user } = useAuthContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [contacts, setContacts] = useState<Contact[]>(() => {
+    const saved = localStorage.getItem('chat_contacts');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [loading, setLoading] = useState(!localStorage.getItem('chat_contacts'));
   const [error, setError] = useState<string | null>(null);
 
   // Cargar conversaciones del backend
@@ -53,6 +56,7 @@ const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
 
         console.log('👥 Contactos procesados:', contactsFromConversations);
         setContacts(contactsFromConversations);
+        localStorage.setItem('chat_contacts', JSON.stringify(contactsFromConversations));
       } catch (err: unknown) {
         console.error('❌ Error al cargar conversaciones:', err);
         const errorMessage = err instanceof Error ? err.message : 'Error al cargar conversaciones';
@@ -430,7 +434,11 @@ const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
                 lastSeen: 'Ahora',
               };
               // Agregar el nuevo contacto a la lista
-              setContacts((prev) => [newContact, ...prev]);
+              setContacts((prev) => {
+                const updated = [newContact, ...prev];
+                localStorage.setItem('chat_contacts', JSON.stringify(updated));
+                return updated;
+              });
             }
             // Seleccionar el chat automáticamente
             onSelectChat(userId, username);
@@ -448,7 +456,11 @@ const ChatSidebar = ({ selectedChat, onSelectChat }: ChatSidebarProps) => {
               unreadCount: 0,
               lastSeen: 'Ahora',
             };
-            setContacts((prev) => [newContact, ...prev]);
+            setContacts((prev) => {
+              const updated = [newContact, ...prev];
+              localStorage.setItem('chat_contacts', JSON.stringify(updated));
+              return updated;
+            });
             onSelectChat(userId, username);
             setIsPopupOpen(false);
           }
