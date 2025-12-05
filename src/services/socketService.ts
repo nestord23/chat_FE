@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import type { MessageSentResponse, NewMessageEvent, MessageError } from '../types/message';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
@@ -123,6 +124,118 @@ class SocketService {
       return this.socket.connected;
     }
     return false;
+  }
+
+  // ========================================
+  // MÉTODOS DE MENSAJERÍA (FASE 2)
+  // ========================================
+
+  /**
+   * Envía un mensaje a otro usuario
+   * @param to - ID del usuario destinatario
+   * @param content - Contenido del mensaje (1-5000 caracteres)
+   * @returns Promise que se resuelve cuando el mensaje es enviado
+   */
+  sendMessage(to: string, content: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.socket || !this.socket.connected) {
+        reject(new Error('Socket no conectado'));
+        return;
+      }
+
+      // Validación básica
+      if (!to || !content) {
+        reject(new Error('Destinatario y contenido son requeridos'));
+        return;
+      }
+
+      if (content.length < 1 || content.length > 5000) {
+        reject(new Error('El mensaje debe tener entre 1 y 5000 caracteres'));
+        return;
+      }
+
+      console.log('📤 Enviando mensaje a:', to);
+
+      this.socket.emit(
+        'send_message',
+        { to, content },
+        (response: MessageSentResponse | MessageError) => {
+          // Type guard: verificar si es un error
+          if ('error' in response) {
+            console.error('❌ Error al enviar mensaje:', response.error);
+            reject(new Error(response.error));
+          } else {
+            console.log('✅ Mensaje enviado exitosamente');
+            resolve();
+          }
+        }
+      );
+    });
+  }
+
+  /**
+   * Escucha el evento de confirmación de mensaje enviado
+   */
+  onMessageSent(callback: (data: MessageSentResponse) => void) {
+    if (!this.socket) {
+      console.warn('Socket no inicializado');
+      return () => {};
+    }
+
+    this.socket.on('message_sent', callback);
+
+    return () => {
+      if (this.socket) {
+        this.socket.off('message_sent', callback);
+      }
+    };
+  }
+
+  /**
+   * Escucha nuevos mensajes recibidos
+   */
+  onNewMessage(callback: (data: NewMessageEvent) => void) {
+    if (!this.socket) {
+      console.warn('Socket no inicializado');
+      return () => {};
+    }
+
+    this.socket.on('new_message', callback);
+
+    return () => {
+      if (this.socket) {
+        this.socket.off('new_message', callback);
+      }
+    };
+  }
+
+  /**
+   * Escucha errores relacionados con mensajes
+   */
+  onMessageError(callback: (error: MessageError) => void) {
+    if (!this.socket) {
+      console.warn('Socket no inicializado');
+      return () => {};
+    }
+
+    this.socket.on('error', callback);
+
+    return () => {
+      if (this.socket) {
+        this.socket.off('error', callback);
+      }
+    };
+  }
+
+  /**
+   * Remueve todos los listeners de mensajes
+   */
+  removeAllMessageListeners() {
+    if (this.socket) {
+      this.socket.off('message_sent');
+      this.socket.off('new_message');
+      this.socket.off('error');
+    }
   }
 }
 
