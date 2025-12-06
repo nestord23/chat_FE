@@ -317,8 +317,6 @@ const ChatWindow = ({
 
     // Llamar a la función de inicialización
     initSocket();
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, selectedChat, getAccessTokenAsync]); // ✅ Agregado getAccessTokenAsync
 
   const handleSendMessage = async (text: string) => {
