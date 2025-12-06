@@ -49,7 +49,7 @@ export const MessageTest: React.FC = () => {
 
   return (
     <div style={styles.container}>
-      <h2 style={styles.title}>🧪 Test de Mensajería - Fase 2</h2>
+      <h2 style={styles.title}>🧪 Test de Mensajería - Fases 2 y 3</h2>
 
       {/* Estado de conexión */}
       <div style={styles.section}>

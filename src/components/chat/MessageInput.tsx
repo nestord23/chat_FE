@@ -1,19 +1,39 @@
-import { useState, useRef, type KeyboardEvent } from 'react';
+import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
+import { socketService } from '../../services/socketService';
 
 interface MessageInputProps {
   onSendMessage: (text: string) => void;
+  receiverId?: string; // FASE 4: ID del usuario destinatario
 }
 
-const MessageInput = ({ onSendMessage }: MessageInputProps) => {
+const MessageInput = ({ onSendMessage, receiverId }: MessageInputProps) => {
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const typingTimeoutRef = useRef<number | null>(null);
+
+  // FASE 4: Cleanup del timeout al desmontar
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleSend = () => {
     if (message.trim()) {
       onSendMessage(message.trim());
       setMessage('');
       setIsTyping(false);
+
+      // FASE 4: Emitir stop_typing al enviar
+      if (receiverId && typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        socketService.emitStopTyping(receiverId);
+        typingTimeoutRef.current = null;
+      }
+
       inputRef.current?.focus();
     }
   };
@@ -26,8 +46,35 @@ const MessageInput = ({ onSendMessage }: MessageInputProps) => {
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setMessage(e.target.value);
-    setIsTyping(e.target.value.length > 0);
+    const newValue = e.target.value;
+    setMessage(newValue);
+    setIsTyping(newValue.length > 0);
+
+    // FASE 4: Implementar debounce para typing
+    if (receiverId && newValue.trim().length > 0) {
+      // Emitir typing solo si no se ha emitido recientemente
+      if (!typingTimeoutRef.current) {
+        socketService.emitTyping(receiverId);
+      }
+
+      // Limpiar timeout anterior
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+
+      // Configurar nuevo timeout para stop_typing (3 segundos)
+      typingTimeoutRef.current = setTimeout(() => {
+        socketService.emitStopTyping(receiverId);
+        typingTimeoutRef.current = null;
+      }, 3000);
+    } else if (receiverId && newValue.trim().length === 0) {
+      // Si se borra todo el texto, emitir stop_typing inmediatamente
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        socketService.emitStopTyping(receiverId);
+        typingTimeoutRef.current = null;
+      }
+    }
   };
 
   return (
@@ -207,7 +254,7 @@ const MessageInput = ({ onSendMessage }: MessageInputProps) => {
             }
           }}
         >
-            <svg
+          <svg
             style={{ width: '1.25rem', height: '1.25rem' }}
             fill="none"
             stroke="currentColor"

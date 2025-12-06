@@ -1,6 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { socketService } from '../services/socketService';
-import type { Message, MessageSentResponse, NewMessageEvent, MessageError } from '../types/message';
+import type {
+  Message,
+  MessageSentResponse,
+  NewMessageEvent,
+  MessageError,
+  MessageStatus,
+} from '../types/message';
 import { validateMessageContent as validate } from '../types/message';
 
 interface UseMessagesOptions {
@@ -23,6 +29,10 @@ export const useMessages = (options: UseMessagesOptions = {}) => {
 
   // Estado de envío
   const [isSending, setIsSending] = useState(false);
+
+  // FASE 6: Estado de rate limiting
+  const [isRateLimited, setIsRateLimited] = useState(false);
+  const rateLimitTimeoutRef = useRef<number | null>(null);
 
   // Ref para evitar duplicados
   const processedMessageIds = useRef<Set<string>>(new Set());
@@ -81,6 +91,13 @@ export const useMessages = (options: UseMessagesOptions = {}) => {
         throw new Error(errorMsg);
       }
 
+      // FASE 6: Verificar rate limiting
+      if (isRateLimited) {
+        const errorMsg = 'Demasiados mensajes. Por favor espera un momento';
+        setError(errorMsg);
+        throw new Error(errorMsg);
+      }
+
       // Validar contenido
       const validation = validate(content);
       if (!validation.valid) {
@@ -111,14 +128,35 @@ export const useMessages = (options: UseMessagesOptions = {}) => {
         console.log('✅ Mensaje enviado correctamente');
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Error al enviar mensaje';
-        setError(errorMessage);
+
+        // FASE 6: Detectar rate limiting
+        if (errorMessage.includes('rate') || errorMessage.includes('limit')) {
+          console.error('⚠️ Rate limit detectado');
+          setIsRateLimited(true);
+          setError('Demasiados mensajes. Espera 15 segundos');
+
+          // Limpiar rate limit después de 15 segundos
+          if (rateLimitTimeoutRef.current) {
+            clearTimeout(rateLimitTimeoutRef.current);
+          }
+
+          rateLimitTimeoutRef.current = setTimeout(() => {
+            console.log('✅ Rate limit liberado');
+            setIsRateLimited(false);
+            setError(null);
+            rateLimitTimeoutRef.current = null;
+          }, 15000);
+        } else {
+          setError(errorMessage);
+        }
+
         console.error('❌ Error al enviar mensaje:', err);
         throw err;
       } finally {
         setIsSending(false);
       }
     },
-    [userId, addMessage]
+    [userId, addMessage, isRateLimited]
   );
 
   /**
@@ -164,6 +202,44 @@ export const useMessages = (options: UseMessagesOptions = {}) => {
     processedMessageIds.current.clear();
   }, []);
 
+  /**
+   * Actualiza el estado de un mensaje específico
+   */
+  const updateMessageStatus = useCallback((messageId: string, newStatus: MessageStatus) => {
+    setMessages((prev) => {
+      const updated = { ...prev };
+
+      // Buscar el mensaje en todas las conversaciones
+      Object.keys(updated).forEach((conversationId) => {
+        updated[conversationId] = updated[conversationId].map((msg) =>
+          msg.id === messageId ? { ...msg, estado: newStatus } : msg
+        );
+      });
+
+      return updated;
+    });
+  }, []);
+
+  /**
+   * Marca mensajes de una conversación como vistos
+   */
+  const markMessagesAsSeen = useCallback(
+    (otherUserId: string) => {
+      if (!userId) return;
+
+      const conversationId = getConversationId(userId, otherUserId);
+      const conversationMessages = messages[conversationId] || [];
+
+      // Marcar todos los mensajes no vistos del otro usuario
+      conversationMessages.forEach((msg) => {
+        if (msg.from === otherUserId && msg.estado !== 'visto') {
+          socketService.markMessageAsSeen(msg.id);
+        }
+      });
+    },
+    [userId, messages, getConversationId]
+  );
+
   // Configurar listeners de eventos de socket
   useEffect(() => {
     if (!enabled) return;
@@ -186,6 +262,9 @@ export const useMessages = (options: UseMessagesOptions = {}) => {
 
       if (data.message) {
         addMessage(data.message);
+
+        // Auto-marcar como visto si el usuario está viendo esta conversación
+        // Esto se puede controlar con un estado adicional de "conversación activa"
       }
     });
 
@@ -195,25 +274,45 @@ export const useMessages = (options: UseMessagesOptions = {}) => {
       setError(errorData.error);
     });
 
+    // ========================================
+    // FASE 3: Listeners de confirmaciones
+    // ========================================
+
+    // Listener: Mensaje entregado
+    const unsubscribeDelivered = socketService.onMessageDelivered((data) => {
+      console.log('📬 Mensaje entregado:', data);
+      updateMessageStatus(data.messageId, 'entregado');
+    });
+
+    // Listener: Mensaje visto
+    const unsubscribeSeen = socketService.onMessageSeen((data) => {
+      console.log('👁️ Mensaje visto:', data);
+      updateMessageStatus(data.messageId, 'visto');
+    });
+
     // Cleanup
     return () => {
       console.log('🧹 Limpiando listeners de mensajes...');
       unsubscribeSent();
       unsubscribeNew();
       unsubscribeError();
+      unsubscribeDelivered();
+      unsubscribeSeen();
     };
-  }, [enabled, addMessage]);
+  }, [enabled, addMessage, updateMessageStatus]);
 
   return {
     // Estado
     messages,
     error,
     isSending,
+    isRateLimited, // FASE 6
 
     // Métodos
     sendMessage,
     getConversationMessages,
     clearConversation,
     clearAllMessages,
+    markMessagesAsSeen, // FASE 3
   };
 };

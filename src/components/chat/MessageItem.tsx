@@ -1,9 +1,12 @@
+import MessageStatusIndicator from './MessageStatusIndicator';
+
 interface Message {
   id: string;
   senderId: string;
   text: string;
   timestamp: string;
   isMine: boolean;
+  status?: string; // FASE 3: Estado del mensaje
 }
 
 interface MessageItemProps {
@@ -70,18 +73,33 @@ const MessageItem = ({ message }: MessageItemProps) => {
             {message.text}
           </p>
         </div>
-        <span
+        <div
           style={{
-            fontFamily: 'Orbitron, sans-serif',
-            fontSize: '0.625rem',
-            color: 'rgba(0, 255, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.25rem',
             alignSelf: message.isMine ? 'flex-end' : 'flex-start',
             paddingLeft: message.isMine ? 0 : '0.5rem',
             paddingRight: message.isMine ? '0.5rem' : 0,
           }}
         >
-          {formatTime(message.timestamp)}
-        </span>
+          <span
+            style={{
+              fontFamily: 'Orbitron, sans-serif',
+              fontSize: '0.625rem',
+              color: 'rgba(0, 255, 0, 0.5)',
+            }}
+          >
+            {formatTime(message.timestamp)}
+          </span>
+          {/* FASE 3: Indicador de estado del mensaje */}
+          {message.status && (
+            <MessageStatusIndicator
+              status={message.status as 'enviado' | 'entregado' | 'visto'}
+              isMine={message.isMine}
+            />
+          )}
+        </div>
       </div>
 
       <style>{`
