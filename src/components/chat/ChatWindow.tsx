@@ -90,7 +90,7 @@ const ChatWindow = ({
     }
   }, []);
 
-  // ✅ CARGAR MENSAJES (solo cuando cambia selectedChat)
+  //carga los mensajes desde el servidor
   useEffect(() => {
     if (!selectedChat || !user) return;
 
@@ -101,19 +101,8 @@ const ChatWindow = ({
       messageIdsRef.current.clear();
       currentChatRef.current = selectedChat;
 
-      // Cargar primero del caché
-      const cachedMessages = getLocalMessages(selectedChat);
-      if (cachedMessages.length > 0) {
-        console.log("💾 Mensajes del caché:", cachedMessages.length);
-        setMessages(cachedMessages);
-
-        // Agregar IDs al Set
-        cachedMessages.forEach((msg) => messageIdsRef.current.add(msg.id));
-      } else {
-        setMessages([]);
-      }
-
       try {
+        // ✅ SIEMPRE cargar del servidor (es la fuente de verdad)
         const { messages: fetchedMessages } =
           await chatService.getMessages(selectedChat);
 
@@ -130,10 +119,11 @@ const ChatWindow = ({
 
         console.log("📡 Mensajes del servidor:", formattedMessages.length);
 
-        // Actualizar refs y estado
+        // Actualizar refs con TODOS los IDs del servidor
         messageIdsRef.current.clear();
         formattedMessages.forEach((msg) => messageIdsRef.current.add(msg.id));
 
+        // Actualizar estado y caché
         setMessages(formattedMessages);
         saveLocalMessages(selectedChat, formattedMessages);
 
@@ -141,6 +131,19 @@ const ChatWindow = ({
         await chatService.markMessagesAsSeen(selectedChat);
       } catch (err) {
         console.error("Error al cargar mensajes:", err);
+
+        // ✅ SOLO si falla el servidor, intentar cargar del caché
+        const cachedMessages = getLocalMessages(selectedChat);
+        if (cachedMessages.length > 0) {
+          console.log(
+            "💾 Usando caché por error del servidor:",
+            cachedMessages.length
+          );
+          setMessages(cachedMessages);
+          cachedMessages.forEach((msg) => messageIdsRef.current.add(msg.id));
+        } else {
+          setMessages([]);
+        }
       }
     };
 
@@ -390,7 +393,7 @@ const ChatWindow = ({
     return (
       <div
         style={{
-          height: "100%",
+          height: "50%",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",

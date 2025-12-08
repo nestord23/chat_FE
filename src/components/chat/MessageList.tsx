@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import MessageItem from './MessageItem';
+import { useEffect, useRef } from "react";
+import MessageItem from "./MessageItem";
 
 interface Message {
   id: string;
@@ -15,9 +15,10 @@ interface MessageListProps {
 
 const MessageList = ({ messages }: MessageListProps) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
@@ -26,28 +27,31 @@ const MessageList = ({ messages }: MessageListProps) => {
 
   return (
     <div
+      ref={containerRef}
       style={{
-        height: '100%',
-        overflowY: 'auto',
-        padding: '1.5rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '1rem',
+        height: "100%",
+        overflowY: "auto",
+        padding: "1.5rem",
+        display: "flex",
+        flexDirection: "column",
+        gap: "1rem",
+        // ✅ CLAVE: Anclar mensajes al fondo cuando hay pocos
+        justifyContent: messages.length === 0 ? "center" : "flex-end",
       }}
     >
       {messages.length === 0 ? (
         <div
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            color: 'rgba(0, 255, 0, 0.5)',
-            fontFamily: 'Orbitron, sans-serif',
-            fontSize: '0.875rem',
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "rgba(0, 255, 0, 0.5)",
+            fontFamily: "Orbitron, sans-serif",
+            fontSize: "0.875rem",
+            textAlign: "center",
           }}
         >
-          No hay mensajes aún. ¡Envía el primero!
+          📭 No hay mensajes aún. ¡Envía el primero!
         </div>
       ) : (
         <>
